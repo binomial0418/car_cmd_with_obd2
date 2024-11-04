@@ -1,7 +1,11 @@
-//當藍牙設備與本機配對時，解鎖車門並點燈X秒
-//當藍牙設備與本機斷線時，鎖車門
-//當車輛電源判斷為關閉時，點燈X秒
-//讀取OBD2判斷目前車門是否開啟，若開啟則開燈
+//1.GPIO 34連接無感藍牙模塊，當手機連接藍牙模塊時將GPIO電平拉高，如果車輛未啟動則觸發車門解鎖。
+//2.藍牙模塊與手機斷線，GPIO34電平拉低，如果車輛未啟動則觸發車門上鎖。
+//3.使用另外一塊esp8266與本板的GPIO 35連接，esp8266連接車輛acc電源，當車輛發動esp8266會將GPIO 35拉高，用來判斷車輛目前是否發動中。
+//4.當GPIO 35電平高-->低，代表車輛關閉，則點亮LED燈。
+//5.讀取OBD2(ESP32<-->藍牙elm327)判斷目前車門是否開啟，若開啟則開led。
+//6.讀取OBD2(ESP32<-->藍牙elm327)判斷目前車門是否解鎖，若解鎖則開led。
+//7.定時查詢server上是否有啟動車輛的命令，若有則進行啟動車輛。
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -24,6 +28,7 @@ ELM327 myELM327;
 RTC_DATA_ATTR int loopCounter = 0;  // 使用 RTC 記憶體保存深度睡眠次數
 RTC_DATA_ATTR int preAct = 0;  // 使用 RTC 記憶體保存上次動作 1:unlock 0:lock
 RTC_DATA_ATTR int preAccOn  = 0;  // 使用 RTC 記憶體保存汽車是否通電 0: off 1:on
+RTC_DATA_ATTR int preLock  = 0;  // 使用 RTC 記憶體保存車門是否上鎖 0: unLock 1:Lock
 
 // Wi-Fi 連接資訊
 #include "wifi_info.h"
@@ -43,8 +48,10 @@ const unsigned long ledDuration = 30000; // 30秒後關閉
 
 //定義讀取狀態，以door_open值開始讀
 typedef enum { door_open,
-               door_lock} obd_pid_states;
+               door_lock,
+               SPEED} obd_pid_states;
 obd_pid_states obd_state = door_open;
+float mph = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -154,13 +161,25 @@ void loop() {
           checkDoorLockStats();
           break;
         }
+        case SPEED: //當車子速度到達X時關閉時LED
+        {
+          getCarSpeed();
+          if (mph*1.65 > 10){
+            ledOn = false;
+            if (digitalRead(R1_PIN) == HIGH ){
+              digitalWrite(R1_PIN, LOW);
+              Serial.println("Led Off");
+            }
+          }
+          break;
+        }
       }
     }
     //set led on
     if (ledOn == true){
       ledOnStartTime = millis(); //若持續檢查到開燈註記，就重設時間讓他可以一直亮
     }
-    openLedPowerNonWait();
+    setLedPowerNonWait();
   } else {
     //汽車斷電時點燈解鎖
     if (digitalRead(checkAccPin) == LOW && preAccOn == 1){
@@ -354,28 +373,23 @@ void checkDoorLockStats() {
   }
   if (myELM327.nb_rx_state == ELM_SUCCESS)  // Our response is fully received, let's get our data
   {
-    // Serial.print("door lock "); 
-    // for (int i = 0; i < 40; i++) {
-    //   // Serial.print(myELM327.payload[i], HEX);  // Print each byte in hexadecimal format
-    //   Serial.print(i);
-    //   Serial.print(":");
-    //   Serial.print(myELM327.payload[i]);  // Print each byte in hexadecimal format
-    //   Serial.print(" ");
-    // }
-    //Serial.println(" ");
     if (myELM327.payload[22] == '1'){
       Serial.println("Door Lock");  
+      preLock = 1; //0: unLock 1:Lock
     } else {
       Serial.println("Door UnLock");
-      ledOn = true;//點亮Led
+      if (preLock = 1){ //從鎖門-->解鎖才要開LED
+        ledOn = true;//點亮Led
+      }
+      preLock = 0; //0: unLock 1:Lock
     }
     nb_query_state = SEND_COMMAND;                       // Reset the query state for the next command
-    obd_state = door_open;                               // 切換下一個讀取的狀態是door_open
-    delay(200);                                         // Wait 5 seconds until we query again
+    obd_state = SPEED;                                   // 切換下一個讀取的狀態
+    delay(200);                                          // Wait 5 seconds until we query again
   } else if (myELM327.nb_rx_state != ELM_GETTING_MSG) {  // If state == ELM_GETTING_MSG, response is not yet complete. Restart the loop.
     nb_query_state = SEND_COMMAND;                       // Reset the query state for the next command
     myELM327.printError();
-    obd_state = door_open;                               // 切換下一個讀取的狀態是door_open
+    obd_state = SPEED;                                   // 切換下一個讀取的狀態
     delay(200);  // Wait 5 seconds until we query again
   }
 }
@@ -414,6 +428,21 @@ void checkDoorOpenStats() {
   }
 }
 /************************************
+* 從OBD2取得車速
+************************************/
+void getCarSpeed() {
+  mph = myELM327.mph();
+  if (myELM327.nb_rx_state == ELM_SUCCESS)
+  {
+    obd_state = door_open;
+  }
+  else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
+  {
+    myELM327.printError();
+    obd_state = door_open;
+  }
+}
+/************************************
 * 連線藍牙elm327
 ************************************/
 void ConnectToElm327(){
@@ -441,7 +470,7 @@ void ConnectToElm327(){
 /************************************
 * 使用非阻塞式點亮LED並計時
 *************************************/
-void openLedPowerNonWait() {
+void setLedPowerNonWait() {
   if (digitalRead(R1_PIN) != HIGH && ledOn == true){
     Serial.println("Led on");
     digitalWrite(R1_PIN, HIGH);
