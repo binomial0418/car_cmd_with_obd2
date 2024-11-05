@@ -176,17 +176,14 @@ void loop() {
       }
     }
     //set led on
-    if (ledOn == true){
-      ledOnStartTime = millis(); //若持續檢查到開燈註記，就重設時間讓他可以一直亮
-    }
+    // if (ledOn == true){
+    //   ledOnStartTime = millis(); //若持續檢查到開燈註記，就重設時間讓他可以一直亮
+    // }
     setLedPowerNonWait();
   } else {
     //汽車斷電時點燈解鎖
     if (digitalRead(checkAccPin) == LOW && preAccOn == 1){
-      //digitalWrite(R1_PIN, HIGH); //先讓燈亮起再解鎖
-      delay(100);
       unlockDoor();
-      //openLightPower();
     }
     //睡眠
     setDeepSleep();
@@ -313,7 +310,7 @@ void unlockDoor() {
   delay(100);
   preAct = 1;  //preAct 1:unlock 0:lock
   digitalWrite(POWER_PIN, LOW);  // 關閉3.3V電源輸出
-  //openLightPower();
+  openLightPower();
 }
 /************************************
 * 是否觸發鎖車門條件
@@ -344,18 +341,25 @@ bool checkOpenDoor(){
 * 觸發點燈X秒，但是當藍牙離開範圍就熄燈
 ************************************/
 void openLightPower() {
-  int lightTime = 60; //預設點燈X秒
-  Serial.println("點燈");
-  digitalWrite(R1_PIN, HIGH);
-  for (int i = 0; i < lightTime; i++){
-    if (digitalRead(checkBluePin) != HIGH){
-      break;
-    } else {
-      delay(1000);
-    }
+  for (int i = 0; i < 2; i++){
+    digitalWrite(R1_PIN, HIGH);
+    delay(200);
+    digitalWrite(R1_PIN, LOW);
+    delay(5000);
   }
-  digitalWrite(R1_PIN, LOW);
-  Serial.println("關燈");
+  
+  // int lightTime = 60; //預設點燈X秒
+  // Serial.println("點燈");
+  // digitalWrite(R1_PIN, HIGH);
+  // for (int i = 0; i < lightTime; i++){
+  //   if (digitalRead(checkBluePin) != HIGH){
+  //     break;
+  //   } else {
+  //     delay(1000);
+  //   }
+  // }
+  // digitalWrite(R1_PIN, LOW);
+  // Serial.println("關燈");
 }
 /************************************
 * 從OBD2取得門鎖狀態
@@ -471,15 +475,22 @@ void ConnectToElm327(){
 * 使用非阻塞式點亮LED並計時
 *************************************/
 void setLedPowerNonWait() {
-  if (digitalRead(R1_PIN) != HIGH && ledOn == true){
-    Serial.println("Led on");
+  //改用繼電器控制亮燈時長，所以這邊只要負責點亮即可
+  if (ledOn){
     digitalWrite(R1_PIN, HIGH);
-    ledOnStartTime = millis();
-  }
-
-  // 檢查是否該熄滅
-  if (digitalRead(R1_PIN) == HIGH && (millis() - ledOnStartTime >= ledDuration)) {
+    delay(200);
     digitalWrite(R1_PIN, LOW);
-    Serial.println("Led Off");
+    delay(1000);
   }
+  // if (digitalRead(R1_PIN) != HIGH && ledOn == true){
+  //   Serial.println("Led on");
+  //   digitalWrite(R1_PIN, HIGH);
+  //   ledOnStartTime = millis();
+  // }
+
+  // // 檢查是否該熄滅
+  // if (digitalRead(R1_PIN) == HIGH && (millis() - ledOnStartTime >= ledDuration)) {
+  //   digitalWrite(R1_PIN, LOW);
+  //   Serial.println("Led Off");
+  // }
 }
