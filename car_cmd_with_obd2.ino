@@ -43,6 +43,7 @@ int nb_query_state = SEND_COMMAND;  // Set the inital query state ready to send 
 
 //LED點亮設定
 bool ledOn = false;
+bool overSpeed = false; //時速是否超過X
 unsigned long ledOnStartTime = 0;
 const unsigned long ledDuration = 30000; // 30秒後關閉
 
@@ -89,6 +90,10 @@ void setup() {
   
   pinMode(R1_PIN, OUTPUT); // for key power
   digitalWrite(R1_PIN, LOW);  // 初始狀態下關閉電源輸出
+
+  // digitalWrite(R1_PIN, HIGH);  // for test
+  // delay(1000); //for test
+  // digitalWrite(R1_PIN, LOW);  // for test
   
   //汽車斷電時點燈解鎖 ,2024/11/04移到Loop section
   // if (digitalRead(checkAccPin) == LOW && preAccOn == 1){
@@ -143,6 +148,7 @@ void setup() {
 **********************************************/
 void loop() {
   ledOn = false;
+  overSpeed = false;
   //汽車啟動時讀取OBD資料，汽車關閉後進入深度睡眠
   if (digitalRead(checkAccPin) == HIGH){
     //使用obd_state搭配switch循環讀取OBD2資料，順序為door_open-->door_lock-->tmps_p
@@ -166,7 +172,7 @@ void loop() {
           getCarSpeed();
           if (mph*1.65 > 10){
             ledOn = false;
-            if (digitalRead(R1_PIN) == HIGH ){
+            if (digitalRead(R1_PIN) == HIGH){
               digitalWrite(R1_PIN, LOW);
               Serial.println("Led Off");
             }
@@ -341,10 +347,16 @@ bool checkOpenDoor(){
 * 觸發點燈X秒，但是當藍牙離開範圍就熄燈
 ************************************/
 void openLightPower() {
+  //改用繼電器控制亮燈時長，所以這邊只要負責點亮即可
+  //繼電器設定觸發一次點亮20秒
   for (int i = 0; i < 2; i++){
-    digitalWrite(R1_PIN, HIGH);
-    delay(200);
-    digitalWrite(R1_PIN, LOW);
+    if (digitalRead(checkBluePin) != HIGH){
+      break;
+    } else {
+      digitalWrite(R1_PIN, HIGH);
+      delay(200);
+      digitalWrite(R1_PIN, LOW);
+    }
     delay(5000);
   }
   
@@ -476,6 +488,7 @@ void ConnectToElm327(){
 *************************************/
 void setLedPowerNonWait() {
   //改用繼電器控制亮燈時長，所以這邊只要負責點亮即可
+  //繼電器設定觸發一次點亮20秒
   if (ledOn){
     digitalWrite(R1_PIN, HIGH);
     delay(200);
