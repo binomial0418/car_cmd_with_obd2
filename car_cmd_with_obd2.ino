@@ -95,13 +95,13 @@ void setup() {
   // delay(1000); //for test
   // digitalWrite(R1_PIN, LOW);  // for test
   
-  //汽車斷電時點燈解鎖 ,2024/11/04移到Loop section
-  // if (digitalRead(checkAccPin) == LOW && preAccOn == 1){
-  //   //digitalWrite(R1_PIN, HIGH); //先讓燈亮起再解鎖
-  //   delay(100);
-  //   unlockDoor();
-  //   //openLightPower();
-  // }
+  //汽車斷電時點燈解鎖 ,Loop section跟這裡都要做
+  if (digitalRead(checkAccPin) == LOW && preAccOn == 1){
+    //digitalWrite(R1_PIN, HIGH); //先讓燈亮起再解鎖
+    delay(100);
+    unlockDoor();
+    //openLightPower();
+  }
   //汽車未發動狀態下 才做發車或開鎖門動作
   if (digitalRead(checkAccPin) == LOW){
     //次數到達且無藍牙訊號且汽車目前未發動 發車
@@ -172,6 +172,7 @@ void loop() {
           getCarSpeed();
           if (mph*1.65 > 10){
             ledOn = false;
+            overSpeed = true;
             if (digitalRead(R1_PIN) == HIGH){
               digitalWrite(R1_PIN, LOW);
               Serial.println("Led Off");
